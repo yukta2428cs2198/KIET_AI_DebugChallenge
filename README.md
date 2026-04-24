@@ -9,5 +9,5 @@ Bug 5 → Training looks successful, but during chat the bot always says "I don'
 
 Bug 1 → Even after fixing bugs 2–5, the bot still refuses every response — students must find the config value 
 
-The bugs are ordered by discovery difficulty, forcing students to debug in layers: crash → training failure → inference failure. \n
+The bugs are ordered by discovery difficulty, forcing students to debug in layers: crash → training failure → inference failure.
 
