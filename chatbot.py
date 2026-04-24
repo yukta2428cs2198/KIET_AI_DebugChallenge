@@ -26,7 +26,8 @@ for resource in ("punkt", "punkt_tab", "wordnet"):
 HIDDEN_SIZE          = 64
 LEARNING_RATE        = 0.005
 EPOCHS               = 600
-CONFIDENCE_THRESHOLD = 0.95
+CONFIDENCE_THRESHOLD = 0.60      # BUG 1 FIX: was 0.95 — impossibly high threshold
+                                  # meant the bot always fell back to "I don't understand"
 INTENTS_FILE         = "intents.json"
 MODEL_DIR            = "model_artifacts"
 # ─────────────────────────────────────────────────────────────────────────────
@@ -39,7 +40,9 @@ lemmatizer = WordNetLemmatizer()
 def preprocess(text: str) -> list:
     """Tokenise → lowercase → lemmatise; drop non-alpha tokens."""
     tokens = nltk.word_tokenize(text.lower())
-    return [lemmatizer.lemmatize(tok) for tok in tokens if tok.isdigit()]
+    return [lemmatizer.lemmatize(tok) for tok in tokens if tok.isalpha()]
+    # BUG 2 FIX: was tok.isdigit() — kept only digit tokens (numbers), dropping
+    # every alphabetic word. Vocabulary was always empty → crash on first run.
 
 
 def build_vocabulary(intents: dict) -> dict:
@@ -63,7 +66,9 @@ def tokens_to_one_hot(tokens: list, vocab: dict) -> list:
 
 def _one_hot(idx: int, size: int) -> np.ndarray:
     vec = np.zeros((size, 1))
-    vec[idx] = 0.0
+    vec[idx] = 1.0               # BUG 3 FIX: was 0.0 — set the "hot" position to
+                                  # zero, making every one-hot vector all-zeros.
+                                  # The model received no input signal at all.
     return vec
 
 
@@ -115,7 +120,11 @@ class VanillaRNN:
         d_h = self.Why.T @ d_logits
 
         for t in reversed(range(n)):
-            dtanh  = (1.0 + self._hs[t + 1] ** 2) * d_h   # tanh derivative
+            dtanh  = (1.0 - self._hs[t + 1] ** 2) * d_h   # BUG 4 FIX: was (1.0 + h²)
+                                                             # Correct tanh derivative is
+                                                             # (1 - tanh²), not (1 + tanh²).
+                                                             # Wrong sign caused gradients to
+                                                             # explode/diverge; loss never fell.
             d_bh  += dtanh
             d_Wxh += dtanh @ self._inputs[t].T
             d_Whh += dtanh @ self._hs[t].T
@@ -156,7 +165,10 @@ class VanillaRNN:
 
 
 def _softmax(x: np.ndarray) -> np.ndarray:
-    e_x = np.exp(x)
+    e_x = np.exp(x - x.max())   # BUG 5 FIX: subtract max for numerical stability.
+                                  # Without this, large logits cause np.exp() to
+                                  # overflow to inf → nan probabilities → silent
+                                  # training failure / crashes at inference.
     return e_x / e_x.sum()
 
 
